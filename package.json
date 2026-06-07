@@ -11,7 +11,7 @@
   "dependencies": {
     "@reown/appkit": "^1.6.8",
     "@reown/appkit-adapter-ethers": "^1.6.8",
-    "@supabase/Bolt Database-js": "^2.49.1",
+    "@supabase/Database-js": "^2.49.1",
     "@tanstack/react-query": "^5.67.1",
     "axios": "^1.7.9",
     "ethers": "^6.13.5",
