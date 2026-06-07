@@ -1,51 +1,93 @@
-import { useCallback } from 'react'
-import { supabase } from '../lib/supabase'
-import { useAppStore } from '../store/useAppStore'
-import { getTierFromPoints } from '../lib/utils'
-import toast from 'react-hot-toast'
+import { useEffect } from 'react'
+import { useAppKitAccount } from '@reown/appkit/react'
+import { Bolt Database } from '../supabase'
+import { useStore } from '../store'
+import { genCode, getTier } from '../utils'
+import type { User } from '../types'
 
 export function useUser() {
-  const { user, setUser, walletAddress } = useAppStore()
+  const { address, isConnected } = useAppKitAccount()
+  const { user, setUser, setShowUsernameModal } = useStore()
 
-  const updateUsername = useCallback(async (username: string) => {
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setUser(null)
+      return
+    }
+
+    async function loadOrCreateUser() {
+      const { data: existing } = await Bolt Database
+        .from('users')
+        .select('*')
+        .eq('wallet_address', address!.toLowerCase())
+        .maybeSingle()
+
+      if (existing) {
+        setUser(existing as User)
+        return
+      }
+
+      const refCode = localStorage.getItem('ref_code')
+      const newUser = {
+        wallet_address: address!.toLowerCase(),
+        referral_code: genCode(),
+        referred_by: refCode || null,
+        points: 0,
+        tier: 'Bronze',
+        discord_connected: false,
+        theme: 'dark',
+      }
+
+      const { data: created } = await Bolt Database
+        .from('users')
+        .insert(newUser)
+        .select()
+        .single()
+
+      if (created) {
+        setUser(created as User)
+        setShowUsernameModal(true)
+
+        if (refCode) {
+          const { data: referrer } = await Bolt Database
+            .from('users')
+            .select('id')
+            .eq('referral_code', refCode)
+            .maybeSingle()
+
+          if (referrer) {
+            await supabase.from('referrals').insert({
+              referrer_id: referrer.id,
+              referred_id: created.id,
+              points_awarded: 0,
+              first_trade_done: false,
+            })
+          }
+          localStorage.removeItem('ref_code')
+        }
+      }
+    }
+
+    loadOrCreateUser()
+  }, [isConnected, address])
+
+  async function updateUser(updates: Partial<User>) {
     if (!user) return
-    const { data, error } = await supabase
+    const newPoints = updates.points ?? user.points
+    const { data } = await Bolt Database
       .from('users')
-      .update({ username })
+      .update({ ...updates, tier: getTier(newPoints) })
       .eq('id', user.id)
       .select()
       .single()
-    if (error) {
-      toast.error('Username already taken or invalid')
-      return false
-    }
-    setUser({ ...data, tier: getTierFromPoints(data.points) })
-    toast.success('Username updated!')
-    return true
-  }, [user, setUser])
+    if (data) setUser(data as User)
+  }
 
-  const updateTheme = useCallback(async (theme: 'dark' | 'light') => {
-    if (!user) return
-    await supabase.from('users').update({ theme }).eq('id', user.id)
-    setUser({ ...user, theme })
-  }, [user, setUser])
-
-  const deleteAccount = useCallback(async () => {
+  async function deleteAccount() {
     if (!user) return
     await supabase.from('users').delete().eq('id', user.id)
     setUser(null)
-    toast.success('Account deleted')
-  }, [user, setUser])
+  }
 
-  const refreshUser = useCallback(async () => {
-    if (!walletAddress) return
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .eq('wallet_address', walletAddress.toLowerCase())
-      .single()
-    if (data) setUser({ ...data, tier: getTierFromPoints(data.points) })
-  }, [walletAddress, setUser])
-
-  return { user, updateUsername, updateTheme, deleteAccount, refreshUser }
+  return { user, updateUser, deleteAccount }
 }
