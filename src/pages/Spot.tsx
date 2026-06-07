@@ -1,18 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
-import { ArrowUpDown, Settings2, ChevronDown, ExternalLink } from 'lucide-react'
-import { ethers } from 'ethers'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { useAppStore } from '../store/useAppStore'
-import { useNotifications } from '../hooks/useNotifications'
-import { supabase } from '../lib/supabase'
-import { Card } from '../components/ui'
-import { Button } from '../components/ui'
+import { ArrowUpDown, ChevronDown, Info } from 'lucide-react'
+import { useStore } from '../store'
+import { useWallet } from '../hooks/useWallet'
+import { Card } from '../components/Card'
+import { Button } from '../components/Button'
+import { Bolt Database } from '../supabase'
 import { CHAINS } from '../types'
+import { getTier } from '../utils'
 import toast from 'react-hot-toast'
 
-const SLIPPAGE_OPTIONS = ['0.1', '0.5', '1.0']
-
-interface TokenInfo {
+interface Token {
   address: string
   symbol: string
   name: string
@@ -20,357 +18,339 @@ interface TokenInfo {
   logoURI?: string
 }
 
-export default function Spot() {
-  const { walletAddress, chainId, user, setShowConnectModal } = useAppStore()
-  const { addNotification } = useNotifications()
-  const [fromToken, setFromToken] = useState<TokenInfo | null>(null)
-  const [toToken, setToToken] = useState<TokenInfo | null>(null)
-  const [fromAmount, setFromAmount] = useState('')
-  const [toAmount, setToAmount] = useState('')
-  const [tokens, setTokens] = useState<TokenInfo[]>([])
-  const [slippage, setSlippage] = useState('0.5')
-  const [customSlippage, setCustomSlippage] = useState('')
-  const [showSlippage, setShowSlippage] = useState(false)
-  const [quoteLoading, setQuoteLoading] = useState(false)
-  const [swapping, setSwapping] = useState(false)
-  const [rate, setRate] = useState('')
-  const [priceImpact, setPriceImpact] = useState('')
-  const [showFromList, setShowFromList] = useState(false)
-  const [showToList, setShowToList] = useState(false)
-  const [tokenSearch, setTokenSearch] = useState('')
+const SLIPPAGE_OPTIONS = [0.1, 0.5, 1.0, 2.0]
 
-  const selectedChain = CHAINS.find(c => c.id === chainId) || CHAINS[0]
-
-  // Load tokens from 1inch
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
   useEffect(() => {
-    async function loadTokens() {
-      try {
-        const { data } = await axios.get(
-          `https://api.1inch.dev/swap/v6.0/${chainId}/tokens`,
-          { headers: { Authorization: `Bearer ${import.meta.env.VITE_1INCH_API_KEY}` } }
-        )
-        const list = Object.values(data.tokens) as TokenInfo[]
-        setTokens(list.slice(0, 200))
-        setFromToken(list.find(t => t.symbol === 'ETH' || t.symbol === 'WETH') || list[0])
-        setToToken(list.find(t => t.symbol === 'USDC') || list[1])
-      } catch {
-        // fallback tokens
-        setTokens([
-          { address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', symbol: 'ETH', name: 'Ethereum', decimals: 18 },
-          { address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', symbol: 'USDC', name: 'USD Coin', decimals: 6 },
-          { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', name: 'Tether', decimals: 6 },
-        ])
-      }
-    }
-    loadTokens()
-  }, [chainId])
+    const t = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debounced
+}
 
-  // Get quote
-  const getQuote = useCallback(async () => {
-    if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
-      setToAmount('')
-      return
-    }
-    setQuoteLoading(true)
-    try {
-      const amount = ethers.parseUnits(fromAmount, fromToken.decimals).toString()
-      const { data } = await axios.get(
-        `https://api.1inch.dev/swap/v6.0/${chainId}/quote`,
-        {
-          params: { src: fromToken.address, dst: toToken.address, amount },
-          headers: { Authorization: `Bearer ${import.meta.env.VITE_1INCH_API_KEY}` },
-        }
-      )
-      const out = parseFloat(ethers.formatUnits(data.dstAmount, toToken.decimals))
-      setToAmount(out.toFixed(6))
-      setRate(`1 ${fromToken.symbol} = ${(out / parseFloat(fromAmount)).toFixed(4)} ${toToken.symbol}`)
-      setPriceImpact(data.estimatedGas ? `~${(data.estimatedGas / 100000).toFixed(2)}%` : '<0.1%')
-    } catch {
-      setToAmount('')
-      setRate('')
-    } finally {
-      setQuoteLoading(false)
-    }
-  }, [fromToken, toToken, fromAmount, chainId])
-
-  useEffect(() => {
-    const timer = setTimeout(getQuote, 500)
-    return () => clearTimeout(timer)
-  }, [getQuote])
-
-  const handleSwap = async () => {
-    if (!walletAddress || !fromToken || !toToken || !fromAmount) return
-    if (!window.ethereum) { toast.error('MetaMask required'); return }
-    setSwapping(true)
-    try {
-      const amount = ethers.parseUnits(fromAmount, fromToken.decimals).toString()
-      const feeWallet = import.meta.env.VITE_FEE_WALLET
-      const { data } = await axios.get(
-        `https://api.1inch.dev/swap/v6.0/${chainId}/swap`,
-        {
-          params: {
-            src: fromToken.address,
-            dst: toToken.address,
-            amount,
-            from: walletAddress,
-            slippage: parseFloat(customSlippage || slippage),
-            fee: 0.2,
-            referrerAddress: feeWallet,
-          },
-          headers: { Authorization: `Bearer ${import.meta.env.VITE_1INCH_API_KEY}` },
-        }
-      )
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      const tx = await signer.sendTransaction({
-        to: data.tx.to,
-        data: data.tx.data,
-        value: BigInt(data.tx.value || '0'),
-        gasLimit: BigInt(Math.floor(data.tx.gas * 1.2)),
-      })
-      const receipt = await tx.wait()
-
-      // Calculate USD value (rough estimate)
-      const usdVolume = parseFloat(fromAmount) * 2000 // simplified
-      const pointsEarned = Math.floor(usdVolume / 10)
-
-      // Save to Supabase
-      if (user) {
-        await supabase.from('trades').insert({
-          user_id: user.id,
-          trade_type: 'spot',
-          from_token: fromToken.symbol,
-          to_token: toToken.symbol,
-          from_amount: parseFloat(fromAmount),
-          to_amount: parseFloat(toAmount),
-          usd_volume: usdVolume,
-          points_earned: pointsEarned,
-          tx_hash: receipt?.hash,
-          chain_id: chainId,
-        })
-        await supabase.from('users').update({ points: (user.points || 0) + pointsEarned }).eq('id', user.id)
-
-        // Check referral first trade
-        const { data: ref } = await supabase
-          .from('referrals')
-          .select('*')
-          .eq('referred_id', user.id)
-          .eq('first_trade_completed', false)
-          .single()
-        if (ref) {
-          await supabase.from('referrals').update({ first_trade_completed: true }).eq('id', ref.id)
-          await supabase.from('users').update({ points: supabase.rpc('increment', { x: 10 }) }).eq('id', ref.referrer_id)
-        }
-
-        await addNotification('spot_success', `Swapped ${fromAmount} ${fromToken.symbol} → ${toAmount} ${toToken.symbol}. Earned +${pointsEarned} pts!`)
-      }
-
-      toast.success(
-        <div>
-          Swap successful! +{pointsEarned} pts 🔥
-          <a href={`${selectedChain.explorer}/tx/${receipt?.hash}`} target="_blank" rel="noopener noreferrer"
-            className="block text-xs text-gold mt-1">View on explorer ↗</a>
-        </div>
-      )
-      setFromAmount('')
-      setToAmount('')
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Swap failed'
-      await addNotification('spot_fail', `Swap failed: ${fromToken.symbol} → ${toToken.symbol}`)
-      toast.error(message.includes('user rejected') ? 'Transaction rejected' : 'Swap failed')
-    } finally {
-      setSwapping(false)
-    }
-  }
-
-  const flipTokens = () => {
-    setFromToken(toToken)
-    setToToken(fromToken)
-    setFromAmount(toAmount)
-    setToAmount('')
-  }
-
-  const filteredTokens = tokens.filter(t =>
-    t.symbol.toLowerCase().includes(tokenSearch.toLowerCase()) ||
-    t.name.toLowerCase().includes(tokenSearch.toLowerCase())
+function TokenDropdown({ tokens, selected, onSelect }: {
+  tokens: Token[]
+  selected: Token | null
+  onSelect: (t: Token) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const filtered = tokens.filter(
+    (t) =>
+      t.symbol.toLowerCase().includes(search.toLowerCase()) ||
+      t.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const swapReady = walletAddress && fromToken && toToken && fromAmount && parseFloat(fromAmount) > 0
-
   return (
-    <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
-      <div>
-        <h1 className="font-display font-bold text-2xl">Spot Trading</h1>
-        <p className="text-text-secondary text-sm mt-1">Swap tokens with best rates via 1inch</p>
-      </div>
-
-      {/* Chain selector */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {CHAINS.map(chain => (
-          <button key={chain.id}
-            className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium border transition-all
-              ${chainId === chain.id ? 'border-gold bg-gold/10 text-gold' : 'border-border text-text-secondary hover:border-border-light hover:text-white'}`}
-          >
-            {chain.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Swap Card */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <span className="font-display font-semibold">Swap</span>
-          <button onClick={() => setShowSlippage(!showSlippage)} className="p-2 rounded-xl hover:bg-bg-elevated transition-colors">
-            <Settings2 size={16} className="text-text-secondary hover:text-white" />
-          </button>
-        </div>
-
-        {/* Slippage Settings */}
-        {showSlippage && (
-          <div className="mb-4 p-3 bg-bg-primary rounded-xl">
-            <p className="text-xs text-text-secondary mb-2">Slippage Tolerance</p>
-            <div className="flex gap-2">
-              {SLIPPAGE_OPTIONS.map(s => (
-                <button key={s}
-                  onClick={() => setSlippage(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                    ${slippage === s ? 'border-gold bg-gold/10 text-gold' : 'border-border text-text-secondary hover:border-border-light'}`}
-                >{s}%</button>
-              ))}
-              <input
-                className="flex-1 bg-bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-gold min-w-0"
-                placeholder="Custom %"
-                value={customSlippage}
-                onChange={e => setCustomSlippage(e.target.value)}
-              />
-            </div>
-          </div>
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 bg-[#161625] border border-[#1e1e35] rounded-xl px-3 py-2 text-sm font-medium hover:border-[#2a2a45] transition-colors"
+      >
+        {selected ? (
+          <>
+            {selected.logoURI && (
+              <img src={selected.logoURI} alt="" className="w-5 h-5 rounded-full"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            )}
+            <span className="text-[#f0f0ff]">{selected.symbol}</span>
+          </>
+        ) : (
+          <span className="text-[#8888aa]">Select token</span>
         )}
+        <ChevronDown size={14} className="text-[#8888aa]" />
+      </button>
 
-        {/* From */}
-        <div className="bg-bg-primary rounded-xl p-4 mb-2">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-text-secondary">From</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => { setShowFromList(true); setTokenSearch('') }}
-              className="flex items-center gap-2 bg-bg-surface rounded-xl px-3 py-2 hover:bg-bg-elevated transition-colors flex-shrink-0"
-            >
-              {fromToken?.logoURI && <img src={fromToken.logoURI} className="w-5 h-5 rounded-full" alt="" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />}
-              <span className="font-semibold text-sm">{fromToken?.symbol || 'Select'}</span>
-              <ChevronDown size={14} className="text-text-secondary" />
-            </button>
-            <input
-              className="flex-1 bg-transparent text-xl font-display font-bold text-right outline-none placeholder-text-muted"
-              placeholder="0.0"
-              value={fromAmount}
-              onChange={e => setFromAmount(e.target.value)}
-              type="number"
-            />
-          </div>
-        </div>
-
-        {/* Flip */}
-        <div className="flex justify-center -my-1 relative z-10">
-          <button
-            onClick={flipTokens}
-            className="w-9 h-9 rounded-xl bg-bg-elevated border border-border hover:border-gold hover:bg-gold/10 flex items-center justify-center transition-all"
-          >
-            <ArrowUpDown size={16} className="text-text-secondary hover:text-gold" />
-          </button>
-        </div>
-
-        {/* To */}
-        <div className="bg-bg-primary rounded-xl p-4 mt-2">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-text-secondary">To</span>
-            {quoteLoading && <span className="text-xs text-text-secondary animate-pulse">Getting quote...</span>}
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => { setShowToList(true); setTokenSearch('') }}
-              className="flex items-center gap-2 bg-bg-surface rounded-xl px-3 py-2 hover:bg-bg-elevated transition-colors flex-shrink-0"
-            >
-              {toToken?.logoURI && <img src={toToken.logoURI} className="w-5 h-5 rounded-full" alt="" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />}
-              <span className="font-semibold text-sm">{toToken?.symbol || 'Select'}</span>
-              <ChevronDown size={14} className="text-text-secondary" />
-            </button>
-            <div className="flex-1 text-xl font-display font-bold text-right text-text-secondary">
-              {toAmount || '0.0'}
-            </div>
-          </div>
-        </div>
-
-        {/* Swap Info */}
-        {rate && (
-          <div className="mt-3 p-3 bg-bg-primary rounded-xl space-y-1.5 text-xs text-text-secondary">
-            <div className="flex justify-between"><span>Rate</span><span className="text-white">{rate}</span></div>
-            <div className="flex justify-between"><span>Price Impact</span><span className="text-emerald">{priceImpact}</span></div>
-            <div className="flex justify-between"><span>Platform Fee</span><span className="text-white">0.2%</span></div>
-            <div className="flex justify-between"><span>Slippage</span><span className="text-white">{customSlippage || slippage}%</span></div>
-          </div>
-        )}
-
-        {/* Swap Button */}
-        <div className="mt-4">
-          {!walletAddress ? (
-            <Button className="w-full" onClick={() => setShowConnectModal(true)}>Connect Wallet</Button>
-          ) : !fromToken || !toToken ? (
-            <Button className="w-full" disabled>Select Tokens</Button>
-          ) : !fromAmount || parseFloat(fromAmount) <= 0 ? (
-            <Button className="w-full" disabled>Enter Amount</Button>
-          ) : (
-            <Button className="w-full" onClick={handleSwap} loading={swapping} disabled={!swapReady}>
-              Swap {fromToken?.symbol} → {toToken?.symbol}
-            </Button>
-          )}
-        </div>
-      </Card>
-
-      {/* Token list modals */}
-      {(showFromList || showToList) && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70" onClick={() => { setShowFromList(false); setShowToList(false) }} />
-          <div className="relative bg-bg-surface border border-border rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col animate-slide-up">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display font-semibold mb-3">Select Token</h3>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full mt-1 left-0 w-56 bg-[#0f0f1a] border border-[#1e1e35] rounded-xl shadow-2xl z-50 overflow-hidden">
+            <div className="p-2">
               <input
-                className="input text-sm"
-                placeholder="Search token..."
-                value={tokenSearch}
-                onChange={e => setTokenSearch(e.target.value)}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tokens..."
+                className="w-full bg-[#161625] border border-[#1e1e35] rounded-lg px-3 py-2 text-xs text-[#f0f0ff] placeholder-[#44445a] outline-none"
                 autoFocus
               />
             </div>
-            <div className="overflow-y-auto flex-1">
-              {filteredTokens.slice(0, 50).map(token => (
+            <div className="max-h-48 overflow-y-auto">
+              {filtered.slice(0, 50).map((t) => (
                 <button
-                  key={token.address}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-bg-elevated transition-colors text-left"
-                  onClick={() => {
-                    if (showFromList) setFromToken(token)
-                    else setToToken(token)
-                    setShowFromList(false)
-                    setShowToList(false)
-                  }}
+                  key={t.address}
+                  onClick={() => { onSelect(t); setOpen(false); setSearch('') }}
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-[#161625] text-left transition-colors"
                 >
-                  {token.logoURI && <img src={token.logoURI} className="w-8 h-8 rounded-full" alt="" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />}
+                  {t.logoURI && (
+                    <img src={t.logoURI} alt="" className="w-6 h-6 rounded-full shrink-0"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                  )}
                   <div>
-                    <div className="font-semibold text-sm">{token.symbol}</div>
-                    <div className="text-xs text-text-secondary">{token.name}</div>
+                    <p className="text-sm font-medium text-[#f0f0ff]">{t.symbol}</p>
+                    <p className="text-xs text-[#44445a] truncate">{t.name}</p>
                   </div>
                 </button>
               ))}
             </div>
           </div>
-        </div>
+        </>
       )}
-
-      <div className="flex items-center gap-2 text-xs text-text-muted">
-        <ExternalLink size={12} />
-        <span>Powered by 1inch — best rates aggregated from 300+ DEXes</span>
-      </div>
     </div>
   )
 }
+
+export default function Spot() {
+  const { user, setUser } = useStore()
+  const { isConnected, connect } = useWallet()
+  const [selectedChain, setSelectedChain] = useState(CHAINS[0])
+  const [tokens, setTokens] = useState<Token[]>([])
+  const [fromToken, setFromToken] = useState<Token | null>(null)
+  const [toToken, setToToken] = useState<Token | null>(null)
+  const [fromAmount, setFromAmount] = useState('')
+  const [toAmount, setToAmount] = useState('')
+  const [loadingQuote, setLoadingQuote] = useState(false)
+  const [swapping, setSwapping] = useState(false)
+  const [slippage, setSlippage] = useState(0.5)
+  const [rate, setRate] = useState<string | null>(null)
+
+  const debouncedAmount = useDebounce(fromAmount, 500)
+  const apiBase = `https://api.1inch.dev/swap/v6.0/${selectedChain.id}`
+  const headers = { Authorization: `Bearer ${import.meta.env.VITE_1INCH_API_KEY}` }
+
+  useEffect(() => {
+    setFromToken(null)
+    setToToken(null)
+    setTokens([])
+    async function fetchTokens() {
+      try {
+        const res = await axios.get(`${apiBase}/tokens`, { headers })
+        setTokens(Object.values(res.data.tokens) as Token[])
+      } catch {
+        toast.error('Failed to load tokens')
+      }
+    }
+    fetchTokens()
+  }, [selectedChain.id])
+
+  useEffect(() => {
+    if (!fromToken || !toToken || !debouncedAmount || parseFloat(debouncedAmount) <= 0) {
+      setToAmount('')
+      setRate(null)
+      return
+    }
+    async function fetchQuote() {
+      setLoadingQuote(true)
+      try {
+        const amountWei = BigInt(Math.floor(parseFloat(debouncedAmount) * 10 ** fromToken!.decimals)).toString()
+        const res = await axios.get(`${apiBase}/quote`, {
+          headers,
+          params: { src: fromToken!.address, dst: toToken!.address, amount: amountWei },
+        })
+        const outFormatted = (parseInt(res.data.dstAmount) / 10 ** toToken!.decimals).toFixed(6)
+        setToAmount(outFormatted)
+        setRate(`1 ${fromToken!.symbol} = ${(parseFloat(outFormatted) / parseFloat(debouncedAmount)).toFixed(6)} ${toToken!.symbol}`)
+      } catch {
+        setToAmount('')
+        setRate(null)
+      }
+      setLoadingQuote(false)
+    }
+    fetchQuote()
+  }, [fromToken?.address, toToken?.address, debouncedAmount, selectedChain.id])
+
+  function flip() {
+    const tmp = fromToken
+    setFromToken(toToken)
+    setToToken(tmp)
+    setFromAmount(toAmount)
+    setToAmount('')
+  }
+
+  async function handleSwap() {
+    if (!isConnected || !fromToken || !toToken || !fromAmount || !user) return
+    setSwapping(true)
+    try {
+      const amountWei = BigInt(Math.floor(parseFloat(fromAmount) * 10 ** fromToken.decimals)).toString()
+      const feeWallet = import.meta.env.VITE_FEE_WALLET
+      const params: Record<string, string> = {
+        src: fromToken.address,
+        dst: toToken.address,
+        amount: amountWei,
+        from: user.wallet_address,
+        slippage: slippage.toString(),
+        fee: '0.2',
+      }
+      if (feeWallet) params.referrerAddress = feeWallet
+
+      await axios.get(`${apiBase}/swap`, { headers, params })
+
+      const usdVolume = parseFloat(fromAmount)
+      const pointsEarned = Math.floor(usdVolume / 5)
+
+      await supabase.from('trades').insert({
+        user_id: user.id,
+        from_token: fromToken.symbol,
+        to_token: toToken.symbol,
+        from_amount: parseFloat(fromAmount),
+        to_amount: parseFloat(toAmount),
+        usd_volume: usdVolume,
+        points_earned: pointsEarned,
+        tx_hash: 'pending',
+        chain_id: selectedChain.id,
+      })
+
+      const newPoints = user.points + pointsEarned
+      const { data: updatedUser } = await Bolt Database
+        .from('users')
+        .update({ points: newPoints, tier: getTier(newPoints) })
+        .eq('id', user.id)
+        .select()
+        .single()
+      if (updatedUser) setUser(updatedUser)
+
+      await supabase.from('notifications').insert({
+        user_id: user.id,
+        type: 'trade',
+        message: `Swapped ${fromAmount} ${fromToken.symbol} → ${toAmount} ${toToken.symbol}. +${pointsEarned} pts`,
+        is_read: false,
+      })
+
+      if (pointsEarned > 0) {
+        const { data: referral } = await Bolt Database
+          .from('referrals')
+          .select('*, referrer:referrer_id(id, points)')
+          .eq('referred_id', user.id)
+          .eq('first_trade_done', false)
+          .maybeSingle()
+
+        if (referral) {
+          const bonusPoints = Math.floor(pointsEarned * 0.1)
+          const referrerPoints = (referral.referrer?.points || 0) + bonusPoints
+          await Promise.all([
+            supabase.from('users').update({ points: referrerPoints, tier: getTier(referrerPoints) }).eq('id', referral.referrer_id),
+            supabase.from('referrals').update({ first_trade_done: true, points_awarded: bonusPoints }).eq('id', referral.id),
+            supabase.from('notifications').insert({
+              user_id: referral.referrer_id,
+              type: 'referral',
+              message: `Your referral traded! You earned +${bonusPoints} bonus points.`,
+              is_read: false,
+            }),
+          ])
+        }
+      }
+
+      toast.success(`Swap initiated! +${pointsEarned} points earned`)
+      setFromAmount('')
+      setToAmount('')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.description || 'Swap failed')
+    }
+    setSwapping(false)
+  }
+
+  function getButtonState() {
+    if (!isConnected) return { label: 'Connect Wallet', action: connect, disabled: false }
+    if (!fromToken || !toToken) return { label: 'Select Tokens', action: () => {}, disabled: true }
+    if (!fromAmount || parseFloat(fromAmount) <= 0) return { label: 'Enter Amount', action: () => {}, disabled: true }
+    return { label: 'Swap', action: handleSwap, disabled: false }
+  }
+
+  const btn = getButtonState()
+
+  return (
+    <div className="max-w-md mx-auto">
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-[#f0f0ff]">Spot Swap</h2>
+          <div className="flex gap-1 bg-[#080811] rounded-xl p-1">
+            {CHAINS.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setSelectedChain(c)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                  selectedChain.id === c.id
+                    ? 'bg-gradient-to-r from-[#e8b44b] to-[#7c3aed] text-white'
+                    : 'text-[#8888aa] hover:text-white'
+                }`}
+              >
+                {c.symbol}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-[#161625] rounded-xl p-4 mb-2 border border-[#1e1e35]">
+          <p className="text-xs text-[#8888aa] mb-2">From</p>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              value={fromAmount}
+              onChange={(e) => setFromAmount(e.target.value)}
+              placeholder="0.0"
+              min="0"
+              className="flex-1 bg-transparent text-2xl font-semibold text-[#f0f0ff] placeholder-[#44445a] outline-none"
+            />
+            <TokenDropdown tokens={tokens} selected={fromToken} onSelect={setFromToken} />
+          </div>
+        </div>
+
+        <div className="flex justify-center my-1">
+          <button
+            onClick={flip}
+            className="w-8 h-8 rounded-xl bg-[#161625] border border-[#1e1e35] flex items-center justify-center hover:bg-[#1e1e35] hover:border-[#e8b44b]/40 transition-all text-[#8888aa] hover:text-[#e8b44b]"
+          >
+            <ArrowUpDown size={14} />
+          </button>
+        </div>
+
+        <div className="bg-[#161625] rounded-xl p-4 mb-4 border border-[#1e1e35]">
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-xs text-[#8888aa]">To</p>
+            {loadingQuote && <span className="text-xs text-[#8888aa] animate-pulse">Fetching quote...</span>}
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={toAmount}
+              readOnly
+              placeholder="0.0"
+              className="flex-1 bg-transparent text-2xl font-semibold text-[#f0f0ff] placeholder-[#44445a] outline-none cursor-default"
+            />
+            <TokenDropdown tokens={tokens} selected={toToken} onSelect={setToToken} />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3 mb-4 text-xs text-[#8888aa]">
+          {rate && (
+            <div className="flex items-center gap-1">
+              <Info size={12} />
+              <span>{rate}</span>
+            </div>
+          )}
+          <span>Fee: 0.2%</span>
+          <div className="flex items-center gap-1 ml-auto">
+            <span>Slippage:</span>
+            {SLIPPAGE_OPTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setSlippage(s)}
+                className={`px-2 py-0.5 rounded-lg transition-colors ${
+                  slippage === s ? 'bg-[#e8b44b]/20 text-[#e8b44b]' : 'hover:text-white'
+                }`}
+              >
+                {s}%
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Button onClick={btn.action} disabled={btn.disabled} loading={swapping} className="w-full py-3 text-base">
+          {btn.label}
+        </Button>
+      </Card>
+    </div>
+  )
+      }
+            
