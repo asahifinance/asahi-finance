@@ -1,14 +1,61 @@
-import { useCallback, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import { useAppStore } from '../store/useAppStore'
-import { Notification } from '../types'
+import { useEffect, useRef } from 'react'
+import { Bolt Database } from '../supabase'
+import { useStore } from '../store'
+import type { Notification } from '../types'
 
 export function useNotifications() {
-  const { user, notifications, setNotifications, setUnreadCount } = useAppStore()
+  const { user, notifications, setNotifications, unreadCount, setUnreadCount } = useStore()
+  const notificationsRef = useRef(notifications)
+  const unreadRef = useRef(unreadCount)
+  notificationsRef.current = notifications
+  unreadRef.current = unreadCount
 
-  const fetchNotifications = useCallback(async () => {
+  useEffect(() => {
+    if (!user) {
+      setNotifications([])
+      setUnreadCount(0)
+      return
+    }
+
+    async function load() {
+      const { data } = await Bolt Database
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (data) {
+        setNotifications(data as Notification[])
+        setUnreadCount(data.filter((n) => !n.is_read).length)
+      }
+    }
+
+    load()
+
+    const channel = Bolt Database
+      .channel(`notifications:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          setNotifications([payload.new as Notification, ...notificationsRef.current])
+          setUnreadCount(unreadRef.current + 1)
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [user?.id])
+
+  async function markAllRead() {
     if (!user) return
-    const { data } = await supabase
+    await Bolt Database
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', user.id)
+      .eq('is_read', false)
+    const { data } = await Bolt Database
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
@@ -16,38 +63,9 @@ export function useNotifications() {
       .limit(50)
     if (data) {
       setNotifications(data as Notification[])
-      setUnreadCount(data.filter((n) => !n.is_read).length)
+      setUnreadCount(0)
     }
-  }, [user, setNotifications, setUnreadCount])
+  }
 
-  const markAllRead = useCallback(async () => {
-    if (!user) return
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', user.id)
-      .eq('is_read', false)
-    setNotifications(notifications.map((n) => ({ ...n, is_read: true })))
-    setUnreadCount(0)
-  }, [user, notifications, setNotifications, setUnreadCount])
-
-  const addNotification = useCallback(async (
-    type: Notification['type'],
-    message: string
-  ) => {
-    if (!user) return
-    await supabase.from('notifications').insert({
-      user_id: user.id,
-      type,
-      message,
-      is_read: false,
-    })
-    await fetchNotifications()
-  }, [user, fetchNotifications])
-
-  useEffect(() => {
-    fetchNotifications()
-  }, [fetchNotifications])
-
-  return { notifications, markAllRead, addNotification, fetchNotifications }
+  return { markAllRead }
 }
