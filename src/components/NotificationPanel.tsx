@@ -1,68 +1,76 @@
-import { CheckCheck, X, CheckCircle, XCircle, Gift, Bell } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
+import { X, Bell, CheckCheck, Zap, TrendingUp, Gift, AlertCircle } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { useStore } from '../store'
 import { useNotifications } from '../hooks/useNotifications'
-import { timeAgo } from '../lib/utils'
-import { Notification } from '../types'
+import { timeAgo } from '../utils'
 
-function NotifIcon({ type }: { type: Notification['type'] }) {
-  if (type === 'spot_success' || type === 'perp_filled')
-    return <CheckCircle size={18} className="text-emerald flex-shrink-0" />
-  if (type === 'spot_fail' || type === 'perp_liquidated')
-    return <XCircle size={18} className="text-danger flex-shrink-0" />
-  if (type === 'referral')
-    return <Gift size={18} className="text-gold flex-shrink-0" />
-  return <Bell size={18} className="text-text-secondary flex-shrink-0" />
+const TYPE_ICONS: Record<string, ReactNode> = {
+  trade: <TrendingUp size={16} className="text-[#10d9a0]" />,
+  points: <Zap size={16} className="text-[#e8b44b]" />,
+  referral: <Gift size={16} className="text-[#a855f7]" />,
+  system: <AlertCircle size={16} className="text-[#8888aa]" />,
 }
 
 export function NotificationPanel() {
-  const { showNotifications, setShowNotifications, notifications } = useAppStore()
+  const { showNotif, setShowNotif, notifications, unreadCount } = useStore()
   const { markAllRead } = useNotifications()
 
-  if (!showNotifications) return null
+  if (!showNotif) return null
 
   return (
     <>
-      <div className="panel-overlay" onClick={() => setShowNotifications(false)} />
-      <div className="panel">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-bg-surface">
-          <h2 className="font-display font-bold text-lg">Notifications</h2>
+      <div className="fixed inset-0 z-40" onClick={() => setShowNotif(false)} />
+      <div className="fixed right-4 top-20 w-80 bg-[#0f0f1a] border border-[#1e1e35] rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden max-h-[70vh]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1e35]">
           <div className="flex items-center gap-2">
-            <button
-              onClick={markAllRead}
-              className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-gold transition-colors px-2 py-1 rounded-lg hover:bg-bg-elevated"
-            >
-              <CheckCheck size={14} />
-              Mark all read
-            </button>
-            <button
-              onClick={() => setShowNotifications(false)}
-              className="p-1.5 rounded-lg hover:bg-bg-elevated transition-colors"
-            >
-              <X size={18} className="text-text-secondary hover:text-white" />
+            <Bell size={16} className="text-[#e8b44b]" />
+            <span className="font-semibold text-sm">Notifications</span>
+            {unreadCount > 0 && (
+              <span className="bg-[#f43f5e] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                {unreadCount}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <button
+                onClick={markAllRead}
+                className="flex items-center gap-1 text-xs text-[#8888aa] hover:text-white transition-colors"
+              >
+                <CheckCheck size={14} />
+                Mark all read
+              </button>
+            )}
+            <button onClick={() => setShowNotif(false)} className="text-[#8888aa] hover:text-white">
+              <X size={16} />
             </button>
           </div>
         </div>
 
-        <div className="divide-y divide-border">
+        <div className="flex-1 overflow-y-auto">
           {notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Bell size={32} className="text-text-muted" />
-              <p className="text-text-secondary text-sm">No notifications yet</p>
+            <div className="flex flex-col items-center justify-center py-12 text-[#44445a]">
+              <Bell size={32} className="mb-3 opacity-30" />
+              <p className="text-sm">No notifications yet</p>
             </div>
           ) : (
             notifications.map((n) => (
               <div
                 key={n.id}
-                className={`flex gap-3 p-4 transition-colors ${!n.is_read ? 'bg-gold/5' : ''}`}
+                className={`flex items-start gap-3 px-4 py-3 border-b border-[#1e1e35] transition-colors ${
+                  !n.is_read ? 'bg-[#161625]' : 'hover:bg-[#161625]/50'
+                }`}
               >
-                <NotifIcon type={n.type} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm leading-relaxed ${!n.is_read ? 'text-white' : 'text-text-secondary'}`}>
-                    {n.message}
-                  </p>
-                  <p className="text-xs text-text-muted mt-1">{timeAgo(n.created_at)}</p>
+                <div className="mt-0.5 shrink-0">
+                  {TYPE_ICONS[n.type] ?? TYPE_ICONS.system}
                 </div>
-                {!n.is_read && <div className="w-2 h-2 rounded-full bg-gold flex-shrink-0 mt-1.5" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-[#f0f0ff] leading-snug">{n.message}</p>
+                  <p className="text-xs text-[#44445a] mt-1">{timeAgo(n.created_at)}</p>
+                </div>
+                {!n.is_read && (
+                  <div className="w-2 h-2 rounded-full bg-[#e8b44b] shrink-0 mt-1.5" />
+                )}
               </div>
             ))
           )}
