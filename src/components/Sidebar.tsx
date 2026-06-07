@@ -1,51 +1,43 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, TrendingUp, Users, BookOpen, ExternalLink } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Activity, Users, BookOpen } from 'lucide-react'
 
 const NAV = [
-  { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { label: 'Spot', path: '/spot', icon: ArrowLeftRight },
-  { label: 'Perp', path: '/perp', icon: TrendingUp, external: true },
-  { label: 'Community', path: '/community', icon: Users },
-  { label: 'Docs', path: '/docs', icon: BookOpen },
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/spot', label: 'Spot', icon: TrendingUp },
+  { path: '/perp', label: 'Perp', icon: Activity },
+  { path: '/community', label: 'Community', icon: Users },
+  { path: '/docs', label: 'Docs', icon: BookOpen },
 ]
 
 export function Sidebar() {
   return (
-    <aside className="fixed left-0 top-16 bottom-0 w-56 bg-bg-primary border-r border-border hidden md:flex flex-col py-6 px-3 z-20">
-      <nav className="flex flex-col gap-1">
-        {NAV.map(({ label, path, icon: Icon, external }) => (
+    <aside className="hidden md:flex flex-col fixed left-0 top-16 bottom-0 w-[220px] bg-[#080811] border-r border-[#1e1e35] py-4 z-20">
+      <nav className="flex flex-col gap-1 px-3">
+        {NAV.map(({ path, label, icon: Icon }) => (
           <NavLink
             key={path}
             to={path}
+            end={path === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group relative
-              ${isActive
-                ? 'text-white bg-bg-elevated shadow-glow-gold/20'
-                : 'text-text-secondary hover:text-white hover:bg-bg-elevated'
+              `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative ${
+                isActive
+                  ? 'text-white bg-[#161625]'
+                  : 'text-[#8888aa] hover:text-white hover:bg-[#161625]/60'
               }`
             }
           >
             {({ isActive }) => (
               <>
                 {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-gradient-brand rounded-r-full" />
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-r bg-gradient-to-b from-[#e8b44b] to-[#a855f7]" />
                 )}
-                <Icon size={18} className={`flex-shrink-0 ${isActive ? 'text-gold' : 'text-text-secondary group-hover:text-white'}`} />
+                <Icon size={18} />
                 <span>{label}</span>
-                {external && <ExternalLink size={12} className="ml-auto text-text-muted" />}
               </>
             )}
           </NavLink>
         ))}
       </nav>
-
-      {/* Bottom branding */}
-      <div className="mt-auto px-4">
-        <div className="text-xs text-text-muted">
-          <div className="gradient-text font-display font-semibold text-sm mb-1">Asahi Finance</div>
-          <div>v1.0.0 — DeFi Hub</div>
-        </div>
-      </div>
     </aside>
   )
 }
