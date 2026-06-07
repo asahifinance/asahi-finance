@@ -1,126 +1,96 @@
 import { ExternalLink } from 'lucide-react'
 
-const SOCIALS = [
+interface SocialCard {
+  emoji: string
+  platform: string
+  description: string
+  envKey: keyof ImportMetaEnv
+  cta: string
+  color: string
+}
+
+const SOCIALS: SocialCard[] = [
   {
-    name: 'X (Twitter)',
-    handle: '@asahifinance',
-    desc: 'Latest updates, announcements & alpha',
     emoji: '𝕏',
-    color: '#1DA1F2',
+    platform: 'Twitter / X',
+    description: 'Follow us for the latest updates, announcements, and trading insights.',
     envKey: 'VITE_SOCIAL_TWITTER',
-    cta: 'Follow us',
+    cta: 'Follow @AsahiFinance',
+    color: '#1DA1F2',
   },
   {
-    name: 'Discord',
-    handle: 'Join our server',
-    desc: 'Community discussions, support & giveaways',
     emoji: '💬',
-    color: '#5865F2',
+    platform: 'Discord',
+    description: 'Join our community, get support, and chat with fellow traders.',
     envKey: 'VITE_SOCIAL_DISCORD',
     cta: 'Join Discord',
+    color: '#5865F2',
   },
   {
-    name: 'Medium',
-    handle: '@asahifinance',
-    desc: 'In-depth articles, tutorials & research',
     emoji: '✍️',
-    color: '#00D4A1',
+    platform: 'Medium',
+    description: 'Read deep dives, strategy guides, and protocol updates on our blog.',
     envKey: 'VITE_SOCIAL_MEDIUM',
-    cta: 'Read blog',
+    cta: 'Read on Medium',
+    color: '#00ab6c',
   },
   {
-    name: 'TikTok',
-    handle: '@asahifinance',
-    desc: 'Short-form trading tips & highlights',
     emoji: '🎵',
-    color: '#FF0050',
+    platform: 'TikTok',
+    description: 'Short videos on DeFi strategies, market moves, and platform features.',
     envKey: 'VITE_SOCIAL_TIKTOK',
-    cta: 'Watch videos',
+    cta: 'Watch on TikTok',
+    color: '#ff0050',
   },
   {
-    name: 'Instagram',
-    handle: '@asahifinance',
-    desc: 'Visual content, infographics & updates',
     emoji: '📸',
-    color: '#E1306C',
+    platform: 'Instagram',
+    description: 'Visual content, infographics, and community highlights.',
     envKey: 'VITE_SOCIAL_INSTAGRAM',
-    cta: 'Follow us',
-  },
-  {
-    name: 'More coming soon',
-    handle: 'Stay tuned',
-    desc: 'We\'re expanding to more platforms',
-    emoji: '🚀',
-    color: '#F5A623',
-    envKey: null,
-    cta: null,
+    cta: 'Follow on Instagram',
+    color: '#E1306C',
   },
 ]
 
 export default function Community() {
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display font-bold text-2xl">Community</h1>
-        <p className="text-text-secondary text-sm mt-1">Join the Asahi Finance community across all platforms</p>
+        <h1 className="text-2xl font-bold text-[#f0f0ff] mb-1">Community</h1>
+        <p className="text-[#8888aa]">Connect with the Asahi Finance community across all platforms.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {SOCIALS.map((social) => {
-          const url = social.envKey
-            ? (import.meta.env as Record<string, string>)[social.envKey]
-            : null
-
+        {SOCIALS.map((s) => {
+          const url = import.meta.env[s.envKey]
           return (
             <div
-              key={social.name}
-              className="group relative rounded-2xl bg-bg-surface border border-border p-5 transition-all duration-300 hover:border-transparent overflow-hidden"
-              style={{
-                ['--hover-color' as string]: social.color,
-              }}
+              key={s.platform}
+              className="card group cursor-pointer transition-all duration-300 relative overflow-hidden"
+              onClick={() => url && window.open(url, '_blank')}
             >
-              {/* Hover gradient border effect */}
               <div
-                className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10"
-                style={{ background: `linear-gradient(135deg, ${social.color}40, transparent)`, padding: '1px' }}
+                className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-300 pointer-events-none rounded-2xl"
+                style={{ background: `radial-gradient(circle at 50% 0%, ${s.color}, transparent 70%)` }}
               />
-
-              <div className="flex items-start justify-between mb-4">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-bold transition-all duration-300 group-hover:scale-110"
-                  style={{ backgroundColor: `${social.color}20`, color: social.color }}
-                >
-                  {social.emoji}
+              <div className="relative z-10">
+                <div className="text-3xl mb-3">{s.emoji}</div>
+                <h3 className="font-semibold text-[#f0f0ff] mb-1">{s.platform}</h3>
+                <p className="text-sm text-[#8888aa] mb-4 leading-relaxed">{s.description}</p>
+                <div className="flex items-center gap-2 text-sm font-medium" style={{ color: s.color }}>
+                  <span>{s.cta}</span>
+                  <ExternalLink size={14} />
                 </div>
-                {url && (
-                  <ExternalLink size={16} className="text-text-muted group-hover:text-white transition-colors" />
-                )}
               </div>
-
-              <h3 className="font-display font-bold text-lg mb-0.5" style={{ color: url ? 'white' : social.color }}>
-                {social.name}
-              </h3>
-              <p className="text-sm font-medium mb-2" style={{ color: social.color }}>
-                {social.handle}
-              </p>
-              <p className="text-text-secondary text-sm mb-4">{social.desc}</p>
-
-              {url && social.cta ? (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-semibold transition-all duration-200 hover:gap-3"
-                  style={{ color: social.color }}
-                >
-                  {social.cta} →
-                </a>
-              ) : !url && social.cta === null ? (
-                <span className="text-sm text-text-muted">Coming soon...</span>
-              ) : null}
             </div>
           )
         })}
+
+        <div className="card border-dashed border-[#2a2a45] flex flex-col items-center justify-center text-center py-8 opacity-60">
+          <div className="text-3xl mb-3">✨</div>
+          <h3 className="font-semibold text-[#8888aa] mb-1">More Coming Soon</h3>
+          <p className="text-sm text-[#44445a]">New channels and platforms on the way.</p>
+        </div>
       </div>
     </div>
   )
