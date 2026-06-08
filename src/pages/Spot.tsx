@@ -5,7 +5,7 @@ import { useStore } from '../store'
 import { useWallet } from '../hooks/useWallet'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
-import { Bolt Database } from '../supabase'
+import {supabase } from '../supabase'
 import { CHAINS } from '../types'
 import { getTier } from '../utils'
 import toast from 'react-hot-toast'
@@ -202,7 +202,7 @@ export default function Spot() {
       })
 
       const newPoints = user.points + pointsEarned
-      const { data: updatedUser } = await Bolt Database
+      const { data: updatedUser } = await supabase
         .from('users')
         .update({ points: newPoints, tier: getTier(newPoints) })
         .eq('id', user.id)
@@ -218,7 +218,7 @@ export default function Spot() {
       })
 
       if (pointsEarned > 0) {
-        const { data: referral } = await Bolt Database
+        const { data: referral } = await supabase
           .from('referrals')
           .select('*, referrer:referrer_id(id, points)')
           .eq('referred_id', user.id)
