@@ -9,9 +9,12 @@ import './index.css'
 
 const projectId = import.meta.env.VITE_REOWN_PROJECT_ID || 'demo-project-id'
 
+// Dibikin variabel konstan pakai 'as const' biar lolos validasi tipe data TypeScript pas build di Vercel
+const supportedNetworks = [mainnet, arbitrum, optimism, polygon, base] as const
+
 createAppKit({
   adapters: [new EthersAdapter()],
-  networks: [mainnet, arbitrum, optimism, polygon, base],
+  networks: supportedNetworks,
   projectId,
   metadata: {
     name: 'Asahi Finance',
