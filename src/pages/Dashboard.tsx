@@ -5,7 +5,7 @@ import { useStore } from '../store'
 import { useWallet } from '../hooks/useWallet'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
-import { Bolt Database } from '../supabase'
+import { supabase } from '../supabase' // ✅ SUDAH DIPERBAIKI (Tanpa Bolt & Tanpa Spasi)
 import { CHAINS, TIERS } from '../types'
 import { fmtUSD, getNextTier, getTier } from '../utils'
 import toast from 'react-hot-toast'
@@ -57,6 +57,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return
     async function loadStats() {
+      // ✅ SUDAH DIPERBAIKI (Memakai variabel 'supabase' yang benar)
       const [tradesRes, referralsRes] = await Promise.all([
         supabase.from('trades').select('usd_volume').eq('user_id', user!.id),
         supabase.from('referrals').select('id').eq('referrer_id', user!.id),
@@ -291,5 +292,4 @@ export default function Dashboard() {
       </Card>
     </div>
   )
-                  }
-        
+}
