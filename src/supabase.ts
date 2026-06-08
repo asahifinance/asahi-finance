@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/Bolt Database-js'
+import { createClient } from '@supabase/supabase-js'
 
-export const Bolt Database = createClient(
+export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+) 
