@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useAppKitAccount } from '@reown/appkit/react'
-import { Bolt Database } from '../supabase'
+import { supabase } from '../supabase' // ✅ SUDAH DIPERBAIKI
 import { useStore } from '../store'
 import { genCode, getTier } from '../utils'
 import type { User } from '../types'
@@ -16,7 +16,8 @@ export function useUser() {
     }
 
     async function loadOrCreateUser() {
-      const { data: existing } = await Bolt Database
+      // ✅ SUDAH DIPERBAIKI
+      const { data: existing } = await supabase
         .from('users')
         .select('*')
         .eq('wallet_address', address!.toLowerCase())
@@ -38,7 +39,8 @@ export function useUser() {
         theme: 'dark',
       }
 
-      const { data: created } = await Bolt Database
+      // ✅ SUDAH DIPERBAIKI
+      const { data: created } = await supabase
         .from('users')
         .insert(newUser)
         .select()
@@ -49,7 +51,8 @@ export function useUser() {
         setShowUsernameModal(true)
 
         if (refCode) {
-          const { data: referrer } = await Bolt Database
+          // ✅ SUDAH DIPERBAIKI
+          const { data: referrer } = await supabase
             .from('users')
             .select('id')
             .eq('referral_code', refCode)
@@ -74,7 +77,8 @@ export function useUser() {
   async function updateUser(updates: Partial<User>) {
     if (!user) return
     const newPoints = updates.points ?? user.points
-    const { data } = await Bolt Database
+    // ✅ SUDAH DIPERBAIKI
+    const { data } = await supabase
       .from('users')
       .update({ ...updates, tier: getTier(newPoints) })
       .eq('id', user.id)
