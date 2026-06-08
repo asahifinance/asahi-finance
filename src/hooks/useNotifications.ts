@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Bolt Database } from '../supabase'
+import { supabase } from '../supabase'
 import { useStore } from '../store'
 import type { Notification } from '../types'
 
@@ -18,7 +18,7 @@ export function useNotifications() {
     }
 
     async function load() {
-      const { data } = await Bolt Database
+      const { data } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user!.id)
@@ -33,7 +33,7 @@ export function useNotifications() {
 
     load()
 
-    const channel = Bolt Database
+    const channel = supabase
       .channel(`notifications:${user.id}`)
       .on(
         'postgres_changes',
@@ -50,12 +50,12 @@ export function useNotifications() {
 
   async function markAllRead() {
     if (!user) return
-    await Bolt Database
+    await supabase
       .from('notifications')
       .update({ is_read: true })
       .eq('user_id', user.id)
       .eq('is_read', false)
-    const { data } = await Bolt Database
+    const { data } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
